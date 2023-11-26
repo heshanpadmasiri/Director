@@ -17,7 +17,7 @@ async function getFiles() {
 }
 
 async function init() {
-    const dir = await invoke("get_starting_path");
+    const dir = await invoke("get_current_path");
     currentDir = dir;
     const dirElem = document.querySelector("#currentDir"); 
     if (dirElem) {
