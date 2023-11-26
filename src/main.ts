@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/tauri";
 
+let selectedIndex = 0;
+
 async function updateFileList() {
     const fileList = document.querySelector("#fileList");
     if (fileList) {
@@ -51,6 +53,15 @@ async function setPreview(index: number) {
     else {
         // TODO: handle directories
         console.log(previewData);
+    }
+    const fileList = document.querySelector("#fileList");
+    const selected = fileList?.querySelector(".selected");
+    if (selected) {
+        selected.classList.remove("selected");
+    }
+    const listItem = fileList?.querySelectorAll("li")[index];
+    if (listItem) {
+        listItem.classList.add("selected");
     }
 }
 
