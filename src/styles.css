@@ -14,6 +14,11 @@
   -webkit-text-size-adjust: 100%;
 }
 
+.previewContent {
+    margin: 0;
+    width: 100%;
+}
+
 .directory {
     padding: 8px;
     text-align: left;
@@ -29,6 +34,11 @@
     list-style-type: none;
     padding: 0;
     margin: 0;
+}
+
+.selected {
+    background-color: #16278a;
+    color: white;
 }
 
 .sidebar li {
