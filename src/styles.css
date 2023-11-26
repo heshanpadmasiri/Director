@@ -15,18 +15,26 @@
 }
 
 .directory {
+    padding: 8px;
     text-align: left;
-}
-
-
-.directory:hover {
-  border-color: #396cd8;
 }
 
 .sidebar {
     width: 25%;
     padding: 20px;
     align-items: left;
+}
+
+.sidebar ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar li {
+    padding: 8px;
+    border-bottom: 1px solid #555;
+    text-align: left;
 }
 
 .content {
