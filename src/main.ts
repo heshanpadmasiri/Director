@@ -15,12 +15,15 @@ async function updateFileList() {
         removeChildren(fileList);
         const files = await invoke("get_files");
         maxIndex = files.length - 1;
-        files.forEach((fileName, index) => {
+        files.forEach((fileData, index) => {
             const listItem = document.createElement("li");
             listItem.onclick = () => {
                 onFileItemClick(index);
             };
-            listItem.textContent = fileName;
+            listItem.textContent = fileData.name;
+            if (fileData.marked) {
+                listItem.classList.add("marked");
+            }
             fileList?.appendChild(listItem);
         });
         const firstItem = fileList.querySelector("li");
@@ -65,6 +68,17 @@ async function onFileItemClick(index: number) {
         await updateFileList();
     }
     updateSelectedIndicator();
+}
+
+async function markFile() {
+    // FIXME: marking directories doesn't work?
+    await invoke("mark_file", {index: selectedIndex});
+    // FIXME: this shouldn't move the cursor
+    const fileList = document.querySelector("#fileList");
+    const listItem = fileList?.querySelectorAll("li")[selectedIndex];
+    if (listItem) {
+        listItem.classList.toggle("marked");
+    }
 }
 
 async function updatePreview() {
@@ -118,6 +132,9 @@ async function onKeyPress(event: KeyboardEvent) {
         case "h":
             await goToParent();
             return;
+        case "m":
+            markFile();
+            break;
         case "l": // If it is file this will just show the preview so not a problem
         case "Enter":
             await onFileItemClick(selectedIndex);

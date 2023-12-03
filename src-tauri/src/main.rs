@@ -8,6 +8,7 @@ use tauri::State;
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct AppState {
     path: Mutex<PathBuf>,
+    marked_files: Mutex<Vec<PathBuf>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -28,9 +29,16 @@ enum PreviewData {
     Directory(String),
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct FileData {
+    name: String,
+    marked: bool,
+}
+
 fn initial_state() -> AppState {
     AppState {
         path: Mutex::new(starting_path()),
+        marked_files: Mutex::new(Vec::new()),
     }
 }
 
@@ -42,7 +50,8 @@ fn main() {
             get_current_path,
             go_to_parent,
             get_preview,
-            go_to_directory
+            go_to_directory,
+            mark_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -60,14 +69,34 @@ impl File {
             File::Directory(path) => path.file_name().unwrap().to_str().unwrap().to_string(),
         }
     }
+
+    fn path(&self) -> PathBuf {
+        match self {
+            File::File(path) => path.to_path_buf(),
+            File::Directory(path) => path.to_path_buf(),
+        }
+    }
 }
 
 #[tauri::command]
-fn get_files(state: State<AppState>) -> Vec<String> {
+fn get_files(state: State<AppState>) -> Vec<FileData> {
     let current_path = state.path.lock().unwrap();
+    let marked_files = state.marked_files.lock().unwrap();
     get_files_in_directory(&current_path)
         .iter()
-        .map(|file| file.name())
+        .map(|file| {
+            if marked_files.contains(&file.path()) {
+                FileData {
+                    name: file.name(),
+                    marked: true,
+                }
+            } else {
+                FileData {
+                    name: file.name(),
+                    marked: false,
+                }
+            }
+        })
         .collect()
 }
 
@@ -78,6 +107,23 @@ fn get_preview(index: usize, state: State<AppState>) -> PreviewData {
     match &files[index] {
         File::File(path) => PreviewData::File(file_preview(path)),
         File::Directory(path) => PreviewData::Directory(path.to_str().unwrap().to_string()),
+    }
+}
+
+#[tauri::command]
+fn mark_file(index: usize, state: State<AppState>) {
+    let mut marked_files = state.marked_files.lock().unwrap();
+    let current_path = state.path.lock().unwrap();
+    let files = get_files_in_directory(&current_path);
+    match &files[index] {
+        File::File(path) => {
+            if marked_files.contains(path) {
+                marked_files.retain(|file| file != path);
+            } else {
+                marked_files.push(path.to_path_buf());
+            }
+        }
+        _ => {}
     }
 }
 

@@ -37,8 +37,12 @@
 }
 
 .selected {
-    background-color: #16278a;
     color: white;
+    font-weight: bold;
+}
+
+.marked {
+    color: #646cff;
 }
 
 .sidebar li {
