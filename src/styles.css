@@ -49,6 +49,8 @@
     padding: 8px;
     border-bottom: 1px solid #555;
     text-align: left;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .content {
