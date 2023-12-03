@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/tauri";
+import { open } from '@tauri-apps/api/dialog';
+import { appDir } from '@tauri-apps/api/path';
 
 let selectedIndex = 0;
 let maxIndex = 0;
+let ignoreInput = false;
 
 async function updateFileList() {
     const dirElem = document.querySelector("#currentDir");
@@ -42,6 +45,9 @@ function removeChildren(elem: HTMLElement) {
 }
 
 async function onFileItemClick(index: number) {
+    if (ignoreInput) {
+        return;
+    }
     selectedIndex = index;
     // TODO: factor out preview from going to directory
     var previewData = await invoke("get_preview", {index});
@@ -116,6 +122,9 @@ async function updateSelectedIndicator() {
 }
 
 async function onKeyPress(event: KeyboardEvent) {
+    if (ignoreInput) {
+        return;
+    }
     switch (event.key) {
         case "j":
             if (selectedIndex < maxIndex) {
@@ -134,6 +143,9 @@ async function onKeyPress(event: KeyboardEvent) {
             return;
         case "m":
             markFile();
+            break;
+        case "c":
+            await copyFiles();
             break;
         case "l": // If it is file this will just show the preview so not a problem
         case "Enter":
@@ -159,6 +171,19 @@ async function init() {
 async function goToParent() {
     await invoke("go_to_parent");
     await updateFileList();
+}
+
+async function copyFiles() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: await appDir(),
+    });
+    if (selected) {
+        ignoreInput = true;
+        await invoke("copy_marked", {path: selected});
+        ignoreInput = false;
+    }
 }
 
 

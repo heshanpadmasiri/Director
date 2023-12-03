@@ -51,6 +51,7 @@ fn main() {
             go_to_parent,
             get_preview,
             go_to_directory,
+            copy_marked,
             mark_file
         ])
         .run(tauri::generate_context!())
@@ -136,6 +137,17 @@ fn go_to_directory(index: usize, state: State<AppState>) {
             *current_path = path.to_path_buf();
         }
         _ => {}
+    }
+}
+
+#[tauri::command]
+fn copy_marked(path: String, state: State<AppState>) {
+    let path = PathBuf::from(path);
+    let marked_files: Vec<PathBuf> = state.marked_files.lock().unwrap().to_vec();
+    for file in marked_files {
+        let dest = path.join(file.file_name().unwrap());
+        println!("Copying {:?} to {:?}", file, dest);
+        std::fs::copy(file, dest).unwrap();
     }
 }
 
