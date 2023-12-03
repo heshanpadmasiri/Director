@@ -41,7 +41,8 @@ fn main() {
             get_files,
             get_current_path,
             go_to_parent,
-            get_preview
+            get_preview,
+            go_to_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -80,6 +81,18 @@ fn get_preview(index: usize, state: State<AppState>) -> PreviewData {
     }
 }
 
+#[tauri::command]
+fn go_to_directory(index: usize, state: State<AppState>) {
+    let mut current_path = state.path.lock().unwrap();
+    let files = get_files_in_directory(&current_path);
+    match &files[index] {
+        File::Directory(path) => {
+            *current_path = path.to_path_buf();
+        }
+        _ => {}
+    }
+}
+
 fn file_preview(path: &PathBuf) -> FilePreview {
     match file_kind(path) {
         FileKind::Image => FilePreview {
@@ -112,8 +125,9 @@ fn file_kind(path: &PathBuf) -> FileKind {
 
 #[tauri::command]
 fn go_to_parent(state: State<AppState>) {
-    let path = state.path.lock().unwrap().parent().unwrap().to_path_buf();
-    *state.path.lock().unwrap() = path;
+    let mut path = state.path.lock().unwrap();
+    let parent = path.parent().unwrap();
+    *path = parent.to_path_buf();
 }
 
 #[tauri::command]

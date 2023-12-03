@@ -3,6 +3,12 @@ import { invoke } from "@tauri-apps/api/tauri";
 let selectedIndex = 0;
 
 async function updateFileList() {
+    const dirElem = document.querySelector("#currentDir");
+    const dir = await invoke("get_current_path");
+    console.log(dir);
+    if (dirElem) {
+        dirElem.textContent = dir;
+    }
     const fileList = document.querySelector("#fileList");
     if (fileList) {
         removeChildren(fileList);
@@ -10,7 +16,7 @@ async function updateFileList() {
         files.forEach((fileName, index) => {
             const listItem = document.createElement("li");
             listItem.onclick = () => {
-                setPreview(index);
+                onFileItemClick(index);
             };
             listItem.textContent = fileName;
             fileList?.appendChild(listItem);
@@ -19,7 +25,7 @@ async function updateFileList() {
         if (firstItem) {
             firstItem.classList.add("selected");
         }
-        setPreview(0);
+        onFileItemClick(0);
     }
     console.log(fileList);
 }
@@ -30,10 +36,9 @@ function removeChildren(elem: HTMLElement) {
     }
 }
 
-async function setPreview(index: number) {
+async function onFileItemClick(index: number) {
     var previewData = await invoke("get_preview", {index});
     if (previewData.hasOwnProperty("File")) {
-        console.log("file");
         previewData = previewData['File'];
         const preview = document.querySelector("#preview");
         switch (previewData['kind']) {
@@ -52,7 +57,8 @@ async function setPreview(index: number) {
     }
     else {
         // TODO: handle directories
-        console.log(previewData);
+        await invoke("go_to_directory", {index});
+        await updateFileList();
     }
     const fileList = document.querySelector("#fileList");
     const selected = fileList?.querySelector(".selected");
@@ -72,12 +78,14 @@ async function init() {
         dirElem.textContent = dir;
         updateFileList();
         dirElem.onclick = async () => {
-            await invoke("go_to_parent");
-            const dir = await invoke("get_current_path");
-            dirElem.textContent = dir;
-            updateFileList();
+            await goToParent();
         }
     }
+}
+
+async function goToParent() {
+    await invoke("go_to_parent");
+    await updateFileList();
 }
 
 
