@@ -6,17 +6,32 @@ let selectedIndex = 0;
 let maxIndex = 0;
 let ignoreInput = false;
 
+interface FileData {
+    name: string;
+    marked: boolean;
+}
+
+interface FilePreview {
+    kind: string;
+    content: string;
+}
+
+interface PreviewData {
+    File?: FilePreview;
+    Directory?: string;
+}
+
 async function updateFileList() {
     const dirElem = document.querySelector("#currentDir");
-    const dir = await invoke("get_current_path");
+    const dir = await invoke<string>("get_current_path");
     console.log(dir);
     if (dirElem) {
         dirElem.textContent = dir;
     }
-    const fileList = document.querySelector("#fileList");
+    const fileList = document.querySelector<HTMLElement>("#fileList");
     if (fileList) {
         removeChildren(fileList);
-        const files = await invoke("get_files");
+        const files = await invoke<FileData[]>("get_files");
         maxIndex = files.length - 1;
         files.forEach((fileData, index) => {
             const listItem = document.createElement("li");
@@ -50,20 +65,20 @@ async function onFileItemClick(index: number) {
     }
     selectedIndex = index;
     // TODO: factor out preview from going to directory
-    var previewData = await invoke("get_preview", {index});
-    if (previewData.hasOwnProperty("File")) {
-        previewData = previewData['File'];
+    var previewData = await invoke<PreviewData>("get_preview", {index});
+    const file = previewData['File'];
+    if (file != null) {
         const preview = document.querySelector("#preview");
-        switch (previewData['kind']) {
+        switch (file.kind) {
             case 'Image':
-                const base64 = previewData['content'];
+                const base64 = file.content;
                 if (preview) {
                     preview.innerHTML = `<img class="previewContent" src="data:image/jpeg;base64,${base64}">`;
                 }
                 break;
             default:
                 if (preview) {
-                    preview.innerHTML = `<p class="previewContent">${previewData['content']}</p>`;
+                    preview.innerHTML = `<p class="previewContent">${file.content}</p>`;
                 }
                 break;
         }
@@ -87,26 +102,25 @@ async function markFile() {
     }
 }
 
-async function updatePreview() {
-    var previewData = await invoke("get_preview", {index: selectedIndex});
-    if (previewData.hasOwnProperty("File")) {
-        previewData = previewData['File'];
+async function updatePreview(index: number) {
+    var previewData = await invoke<PreviewData>("get_preview", {index});
+    const file = previewData['File'];
+    if (file != null) {
         const preview = document.querySelector("#preview");
-        switch (previewData['kind']) {
+        switch (file.kind) {
             case 'Image':
-                const base64 = previewData['content'];
+                const base64 = file.content;
                 if (preview) {
                     preview.innerHTML = `<img class="previewContent" src="data:image/jpeg;base64,${base64}">`;
                 }
                 break;
             default:
                 if (preview) {
-                    preview.innerHTML = `<p class="previewContent">${previewData['content']}</p>`;
+                    preview.innerHTML = `<p class="previewContent">${file.content}</p>`;
                 }
                 break;
         }
     }
-
 }
 
 async function updateSelectedIndicator() {
@@ -152,13 +166,13 @@ async function onKeyPress(event: KeyboardEvent) {
             await onFileItemClick(selectedIndex);
             return;
     }
-    await updatePreview();
+    await updatePreview(selectedIndex);
 };
 
 async function init() {
-    const dirElem = document.querySelector("#currentDir");
+    const dirElem = document.querySelector<HTMLElement>("#currentDir");
     if (dirElem) {
-        const dir = await invoke("get_current_path");
+        const dir = await invoke<string>("get_current_path");
         dirElem.textContent = dir;
         updateFileList();
         dirElem.onclick = async () => {
@@ -188,6 +202,5 @@ async function copyFiles() {
 
 
 window.addEventListener("DOMContentLoaded", () => {
-    fileList = document.querySelector("#fileList");
     init();
 });
