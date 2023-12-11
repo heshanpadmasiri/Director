@@ -8,6 +8,7 @@ use tauri::State;
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct AppState {
     path: Mutex<PathBuf>,
+    files: Mutex<Vec<PathBuf>>,
     marked_files: Mutex<Vec<PathBuf>>,
 }
 
@@ -38,6 +39,7 @@ struct FileData {
 fn initial_state() -> AppState {
     AppState {
         path: Mutex::new(starting_path()),
+        files: Mutex::new(Vec::new()),
         marked_files: Mutex::new(Vec::new()),
     }
 }
@@ -46,12 +48,14 @@ fn main() {
     tauri::Builder::default()
         .manage(initial_state())
         .invoke_handler(tauri::generate_handler![
-            get_files,
+            copy_marked,
             get_current_path,
-            go_to_parent,
+            get_files,
+            get_marked_files,
+            get_marked_preview,
             get_preview,
             go_to_directory,
-            copy_marked,
+            go_to_parent,
             mark_file
         ])
         .run(tauri::generate_context!())
@@ -79,6 +83,35 @@ impl File {
     }
 }
 
+impl From<PathBuf> for File {
+    fn from(path: PathBuf) -> Self {
+        if path.is_dir() {
+            File::Directory(path)
+        } else {
+            File::File(path)
+        }
+    }
+}
+
+fn files_from_paths(paths: &[PathBuf]) -> Vec<File> {
+    paths
+        .iter()
+        .map(|path| File::from(path.to_path_buf()))
+        .collect()
+}
+
+#[tauri::command]
+fn get_marked_files(state: State<AppState>) -> Vec<FileData> {
+    let marked_files = state.marked_files.lock().unwrap();
+    marked_files
+        .iter()
+        .map(|file| FileData {
+            name: file.file_name().unwrap().to_str().unwrap().to_string(),
+            marked: true,
+        })
+        .collect()
+}
+
 #[tauri::command]
 fn get_files(state: State<AppState>) -> Vec<FileData> {
     let current_path = state.path.lock().unwrap();
@@ -104,8 +137,17 @@ fn get_files(state: State<AppState>) -> Vec<FileData> {
 #[tauri::command]
 fn get_preview(index: usize, state: State<AppState>) -> PreviewData {
     let current_path = state.path.lock().unwrap();
-    let files = get_files_in_directory(&current_path);
-    match &files[index] {
+    get_file_preview(index, &get_files_in_directory(&current_path))
+}
+
+#[tauri::command]
+fn get_marked_preview(index: usize, state: State<AppState>) -> PreviewData {
+    let marked_files = state.marked_files.lock().unwrap();
+    get_file_preview(index, &files_from_paths(&marked_files))
+}
+
+fn get_file_preview(index: usize, file_paths: &Vec<File>) -> PreviewData {
+    match &file_paths[index] {
         File::File(path) => PreviewData::File(file_preview(path)),
         File::Directory(path) => PreviewData::Directory(path.to_str().unwrap().to_string()),
     }

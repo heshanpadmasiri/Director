@@ -5,6 +5,7 @@ import { appDir } from '@tauri-apps/api/path';
 let selectedIndex = 0;
 let maxIndex = 0;
 let ignoreInput = false;
+let inMode = false;
 
 interface FileData {
     name: string;
@@ -21,17 +22,24 @@ interface PreviewData {
     Directory?: string;
 }
 
-async function updateFileList() {
+async function refreshFileList() {
     const dirElem = document.querySelector("#currentDir");
     const dir = await invoke<string>("get_current_path");
-    console.log(dir);
     if (dirElem) {
         dirElem.textContent = dir;
     }
+    await updateFileList(await invoke<FileData[]>("get_files"));
+}
+
+async function switchToMarkedMode() {
+    inMode = true;
+    await updateFileList(await invoke<FileData[]>("get_marked_files"));
+}
+
+async function updateFileList(files: FileData[]) {
     const fileList = document.querySelector<HTMLElement>("#fileList");
     if (fileList) {
         removeChildren(fileList);
-        const files = await invoke<FileData[]>("get_files");
         maxIndex = files.length - 1;
         files.forEach((fileData, index) => {
             const listItem = document.createElement("li");
@@ -50,7 +58,6 @@ async function updateFileList() {
         }
         onFileItemClick(0);
     }
-    console.log(fileList);
 }
 
 function removeChildren(elem: HTMLElement) {
@@ -65,7 +72,7 @@ async function onFileItemClick(index: number) {
     }
     selectedIndex = index;
     // TODO: factor out preview from going to directory
-    var previewData = await invoke<PreviewData>("get_preview", {index});
+    var previewData = await fetchPreviewData(index);
     const file = previewData['File'];
     if (file != null) {
         const preview = document.querySelector("#preview");
@@ -85,15 +92,20 @@ async function onFileItemClick(index: number) {
     }
     else {
         // TODO: handle directories
-        await invoke("go_to_directory", {index});
-        await updateFileList();
+        await invoke("go_to_directory", { index });
+        await refreshFileList();
     }
     updateSelectedIndicator();
 }
 
+async function fetchPreviewData(index: number): Promise<PreviewData> {
+    let fn = inMode ? "get_marked_preview" : "get_preview";
+    return await invoke<PreviewData>(fn, { index });
+}
+
 async function markFile() {
     // FIXME: marking directories doesn't work?
-    await invoke("mark_file", {index: selectedIndex});
+    await invoke("mark_file", { index: selectedIndex });
     // FIXME: this shouldn't move the cursor
     const fileList = document.querySelector("#fileList");
     const listItem = fileList?.querySelectorAll("li")[selectedIndex];
@@ -103,7 +115,7 @@ async function markFile() {
 }
 
 async function updatePreview(index: number) {
-    var previewData = await invoke<PreviewData>("get_preview", {index});
+    var previewData = await fetchPreviewData(index);
     const file = previewData['File'];
     if (file != null) {
         const preview = document.querySelector("#preview");
@@ -158,6 +170,9 @@ async function onKeyPress(event: KeyboardEvent) {
         case "m":
             markFile();
             break;
+        case "M":
+            await switchToMarkedMode();
+            break;
         case "c":
             await copyFiles();
             break;
@@ -174,7 +189,7 @@ async function init() {
     if (dirElem) {
         const dir = await invoke<string>("get_current_path");
         dirElem.textContent = dir;
-        updateFileList();
+        refreshFileList();
         dirElem.onclick = async () => {
             await goToParent();
         }
@@ -183,19 +198,23 @@ async function init() {
 }
 
 async function goToParent() {
-    await invoke("go_to_parent");
-    await updateFileList();
+    if (!inMode) {
+        await invoke("go_to_parent");
+    } else {
+        inMode = false;
+    }
+    await refreshFileList();
 }
 
 async function copyFiles() {
     const selected = await open({
-      directory: true,
-      multiple: false,
-      defaultPath: await appDir(),
+        directory: true,
+        multiple: false,
+        defaultPath: await appDir(),
     });
     if (selected) {
         ignoreInput = true;
-        await invoke("copy_marked", {path: selected});
+        await invoke("copy_marked", { path: selected });
         ignoreInput = false;
     }
 }
