@@ -44,7 +44,7 @@ async function updateFileList(files: FileData[]) {
         files.forEach((fileData, index) => {
             const listItem = document.createElement("li");
             listItem.onclick = () => {
-                onFileItemClick(index);
+                updatePreview(index, true);
             };
             listItem.textContent = fileData.name;
             if (fileData.marked) {
@@ -56,7 +56,7 @@ async function updateFileList(files: FileData[]) {
         if (firstItem) {
             firstItem.classList.add("selected");
         }
-        onFileItemClick(0);
+        updatePreview(0);
     }
 }
 
@@ -64,38 +64,6 @@ function removeChildren(elem: HTMLElement) {
     while (elem.firstChild) {
         elem.removeChild(elem.firstChild);
     }
-}
-
-async function onFileItemClick(index: number) {
-    if (ignoreInput) {
-        return;
-    }
-    selectedIndex = index;
-    // TODO: factor out preview from going to directory
-    var previewData = await fetchPreviewData(index);
-    const file = previewData['File'];
-    if (file != null) {
-        const preview = document.querySelector("#preview");
-        switch (file.kind) {
-            case 'Image':
-                const base64 = file.content;
-                if (preview) {
-                    preview.innerHTML = `<img class="previewContent" src="data:image/jpeg;base64,${base64}">`;
-                }
-                break;
-            default:
-                if (preview) {
-                    preview.innerHTML = `<p class="previewContent">${file.content}</p>`;
-                }
-                break;
-        }
-    }
-    else {
-        // TODO: handle directories
-        await invoke("go_to_directory", { index });
-        await refreshFileList();
-    }
-    updateSelectedIndicator();
 }
 
 async function fetchPreviewData(index: number): Promise<PreviewData> {
@@ -114,7 +82,7 @@ async function markFile() {
     }
 }
 
-async function updatePreview(index: number) {
+async function updatePreview(index: number, clicked = false) {
     var previewData = await fetchPreviewData(index);
     const file = previewData['File'];
     if (file != null) {
@@ -132,6 +100,14 @@ async function updatePreview(index: number) {
                 }
                 break;
         }
+    }
+    else if (clicked) {
+        await invoke("go_to_directory", { index });
+        await refreshFileList();
+    }
+    if (clicked) {
+        selectedIndex = index;
+        updateSelectedIndicator();
     }
 }
 
@@ -178,7 +154,7 @@ async function onKeyPress(event: KeyboardEvent) {
             break;
         case "l": // If it is file this will just show the preview so not a problem
         case "Enter":
-            await onFileItemClick(selectedIndex);
+            await updatePreview(selectedIndex, true);
             return;
     }
     await updatePreview(selectedIndex);
