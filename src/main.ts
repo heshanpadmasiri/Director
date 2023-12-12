@@ -149,6 +149,9 @@ async function onKeyPress(event: KeyboardEvent) {
         case "M":
             await switchToMarkedMode();
             break;
+        case "o":
+            await openDirectory();
+            break;
         case "c":
             await copyFiles();
             break;
@@ -180,6 +183,21 @@ async function goToParent() {
         inMode = false;
     }
     await refreshFileList();
+}
+
+async function openDirectory() {
+    const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: await appDir(),
+    });
+    if (selected) {
+        console.log(selected);
+        ignoreInput = true;
+        await invoke("go_to_path", { pathStr: selected });
+        ignoreInput = false;
+        refreshFileList();
+    }
 }
 
 async function copyFiles() {

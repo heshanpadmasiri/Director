@@ -56,6 +56,7 @@ fn main() {
             get_preview,
             go_to_directory,
             go_to_parent,
+            go_to_path,
             mark_file
         ])
         .run(tauri::generate_context!())
@@ -228,6 +229,12 @@ fn go_to_parent(state: State<AppState>) {
     let mut path = state.path.lock().unwrap();
     let parent = path.parent().unwrap();
     *path = parent.to_path_buf();
+}
+
+#[tauri::command]
+fn go_to_path(state: State<AppState>, path_str: String) {
+    let mut path = state.path.lock().unwrap();
+    *path = PathBuf::from(path_str);
 }
 
 #[tauri::command]
