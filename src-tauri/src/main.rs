@@ -251,17 +251,33 @@ fn get_current_path(state: State<AppState>) -> String {
 }
 
 fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            files.push(File::Directory(path));
-        } else {
-            files.push(File::File(path));
+    std::fs::read_dir(path).unwrap().filter_map(|entry| {
+        match entry {
+            Err(_) => None,
+            Ok(entry) => {
+                let path = entry.path();
+                if is_hidden_file(&path) {
+                    None
+                } else {
+                    Some(path)
+                }
+            }
         }
-    }
-    files
+    }).map(|path_buf| {
+        if path_buf.is_dir() {
+            File::Directory(path_buf)
+        } else {
+            File::File(path_buf)
+        }
+    }).collect()
+}
+
+fn is_hidden_file(path: &PathBuf) -> bool {
+    path.file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with(".")
 }
 
 fn starting_path() -> PathBuf {
