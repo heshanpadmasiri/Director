@@ -3,6 +3,12 @@
 
 use std::{env, io::Read, path::PathBuf, sync::Mutex};
 
+use log::LevelFilter;
+use log4rs::{
+    append::file::FileAppender,
+    config::{Appender, Root},
+    encode::pattern::PatternEncoder,
+};
 use tauri::State;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -46,6 +52,15 @@ fn initial_state() -> AppState {
 
 fn main() {
     let _ = fix_path_env::fix();
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build(get_home().join("director_log.log"))
+        .unwrap();
+    let config = log4rs::Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder().appender("logfile").build(LevelFilter::Info))
+        .unwrap();
+    log4rs::init_config(config).unwrap();
     tauri::Builder::default()
         .manage(initial_state())
         .invoke_handler(tauri::generate_handler![
@@ -61,7 +76,7 @@ fn main() {
             mark_file
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap();
 }
 
 enum File {
@@ -243,7 +258,7 @@ fn get_current_path(state: State<AppState>) -> String {
     match get_current_path_inner(state) {
         Ok(path) => path,
         Err(err) => {
-            eprintln!("Failed to get current path {err}");
+            log::error!("failed to get current path {err}");
             get_home().to_str().unwrap().to_owned()
         }
     }
@@ -255,15 +270,27 @@ fn get_current_path_inner(state: State<AppState>) -> Result<String, &'static str
         .lock()
         .map_err(|_| "failed to lock app state")?
         .file_name()
-        .ok_or("Failed to get the file name form path")?
+        .ok_or("failed to get the file name from path")?
         .to_str()
-        .ok_or("Failed to convert os string to string")?
+        .ok_or("failed to convert os string to string")?
         .to_string())
 }
 
 fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
-    std::fs::read_dir(path)
-        .unwrap()
+    match get_files_in_directory_inner(path) {
+        Ok(files) => files,
+        Err(_) => {
+            log::error!("failed to get files in directory");
+            vec![]
+        }
+    }
+}
+
+fn get_files_in_directory_inner(path: &PathBuf) -> Result<Vec<File>, &'static str> {
+    Ok(std::fs::read_dir(path)
+        .map_err(|err| {
+            "failed to read dir"
+        })?
         .filter_map(|entry| match entry {
             Err(_) => None,
             Ok(entry) => {
@@ -282,7 +309,7 @@ fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
                 File::File(path_buf)
             }
         })
-        .collect()
+        .collect())
 }
 
 fn is_hidden_file(path: &PathBuf) -> bool {
