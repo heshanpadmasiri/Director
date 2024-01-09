@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{io::Read, path::PathBuf, sync::Mutex};
+use std::{env, io::Read, path::PathBuf, sync::Mutex};
 
 use tauri::State;
 
@@ -45,6 +45,7 @@ fn initial_state() -> AppState {
 }
 
 fn main() {
+    let _ = fix_path_env::fix();
     tauri::Builder::default()
         .manage(initial_state())
         .invoke_handler(tauri::generate_handler![
@@ -239,20 +240,31 @@ fn go_to_path(state: State<AppState>, path_str: String) {
 
 #[tauri::command]
 fn get_current_path(state: State<AppState>) -> String {
-    state
+    match get_current_path_inner(state) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("Failed to get current path {err}");
+            get_home().to_str().unwrap().to_owned()
+        }
+    }
+}
+
+fn get_current_path_inner(state: State<AppState>) -> Result<String, &'static str> {
+    Ok(state
         .path
         .lock()
-        .unwrap()
+        .map_err(|_| "failed to lock app state")?
         .file_name()
-        .unwrap()
+        .ok_or("Failed to get the file name form path")?
         .to_str()
-        .unwrap()
-        .to_string()
+        .ok_or("Failed to convert os string to string")?
+        .to_string())
 }
 
 fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
-    std::fs::read_dir(path).unwrap().filter_map(|entry| {
-        match entry {
+    std::fs::read_dir(path)
+        .unwrap()
+        .filter_map(|entry| match entry {
             Err(_) => None,
             Ok(entry) => {
                 let path = entry.path();
@@ -262,26 +274,34 @@ fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
                     Some(path)
                 }
             }
-        }
-    }).map(|path_buf| {
-        if path_buf.is_dir() {
-            File::Directory(path_buf)
-        } else {
-            File::File(path_buf)
-        }
-    }).collect()
+        })
+        .map(|path_buf| {
+            if path_buf.is_dir() {
+                File::Directory(path_buf)
+            } else {
+                File::File(path_buf)
+            }
+        })
+        .collect()
 }
 
 fn is_hidden_file(path: &PathBuf) -> bool {
-    path.file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .starts_with(".")
+    path.file_name().unwrap().to_str().unwrap().starts_with(".")
 }
 
 fn starting_path() -> PathBuf {
-    let path = std::env::current_dir().unwrap();
-    let path = path.to_str().unwrap();
-    PathBuf::from(path)
+    match std::env::current_dir() {
+        Ok(path) => PathBuf::from(path.to_str().unwrap()),
+        // FIXME: log this
+        Err(_) => get_home(),
+    }
+}
+
+fn get_home() -> PathBuf {
+    match env::var("HOME") {
+        Ok(home) => PathBuf::from(home),
+        Err(_) => {
+            panic!("Unable to determine user's home directory");
+        }
+    }
 }
