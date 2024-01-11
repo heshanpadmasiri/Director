@@ -34,6 +34,7 @@ struct FilePreview {
 enum PreviewData {
     File(FilePreview),
     Directory(String),
+    None,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -79,6 +80,7 @@ fn main() {
         .unwrap();
 }
 
+#[derive(Debug)]
 enum File {
     File(PathBuf),
     Directory(PathBuf),
@@ -153,20 +155,54 @@ fn get_files(state: State<AppState>) -> Vec<FileData> {
 
 #[tauri::command]
 fn get_preview(index: usize, state: State<AppState>) -> PreviewData {
-    let current_path = state.path.lock().unwrap();
+    match get_preview_inner(index, state) {
+        Ok(preview) => preview,
+        Err(err) => {
+            log::error!("failed to get preview {err}");
+            PreviewData::Directory("NA".to_string())
+        }
+    }
+}
+
+fn get_preview_inner(index: usize, state: State<AppState>) -> Result<PreviewData, &'static str> {
+    let current_path = state.path.lock().map_err(|_| "failed to lock app state")?;
     get_file_preview(index, &get_files_in_directory(&current_path))
 }
 
 #[tauri::command]
 fn get_marked_preview(index: usize, state: State<AppState>) -> PreviewData {
-    let marked_files = state.marked_files.lock().unwrap();
+    match get_marked_preview_inner(index, state) {
+        Ok(preview) => preview,
+        Err(err) => {
+            log::error!("failed to get marked preview {err}");
+            PreviewData::Directory("NA".to_string())
+        }
+    }
+}
+
+fn get_marked_preview_inner(
+    index: usize,
+    state: State<AppState>,
+) -> Result<PreviewData, &'static str> {
+    let marked_files = state
+        .marked_files
+        .lock()
+        .map_err(|_| "failed to lock app state")?;
     get_file_preview(index, &files_from_paths(&marked_files))
 }
 
-fn get_file_preview(index: usize, file_paths: &Vec<File>) -> PreviewData {
+fn get_file_preview(index: usize, file_paths: &Vec<File>) -> Result<PreviewData, &'static str> {
+    log::info!("{index} {file_paths:?}");
+    if file_paths.len() <= index {
+        return Ok(PreviewData::None);
+    }
     match &file_paths[index] {
-        File::File(path) => PreviewData::File(file_preview(path)),
-        File::Directory(path) => PreviewData::Directory(path.to_str().unwrap().to_string()),
+        File::File(path) => Ok(PreviewData::File(file_preview(path))),
+        File::Directory(path) => Ok(PreviewData::Directory(
+            path.to_str()
+                .ok_or("failed to parse directory path")?
+                .to_string(),
+        )),
     }
 }
 
