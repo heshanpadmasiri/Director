@@ -1,4 +1,4 @@
-# Directory
+# Director
 A simple keybord based file manager inspired by the [dired mode](https://www.gnu.org/software/emacs/manual/html_node/emacs/Dired.html) in Emacs.
 
 ## Keybindings
