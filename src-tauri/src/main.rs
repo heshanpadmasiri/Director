@@ -301,15 +301,19 @@ fn get_current_path(state: State<AppState>) -> String {
 }
 
 fn get_current_path_inner(state: State<AppState>) -> Result<String, &'static str> {
-    Ok(state
-        .path
-        .lock()
-        .map_err(|_| "failed to lock app state")?
-        .file_name()
-        .ok_or("failed to get the file name from path")?
-        .to_str()
-        .ok_or("failed to convert os string to string")?
-        .to_string())
+    let path = state.path.lock().map_err(|_| "failed to lock app state")?;
+    let path_str = if is_root_path(&path) {
+        "/".to_string()
+    } else {
+        path.to_str()
+            .ok_or("failed to convert path to string")?
+            .to_string()
+    };
+    Ok(path_str)
+}
+
+fn is_root_path(path: &PathBuf) -> bool {
+    path.parent().is_none()
 }
 
 fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
@@ -324,9 +328,7 @@ fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
 
 fn get_files_in_directory_inner(path: &PathBuf) -> Result<Vec<File>, &'static str> {
     Ok(std::fs::read_dir(path)
-        .map_err(|err| {
-            "failed to read dir"
-        })?
+        .map_err(|err| "failed to read dir")?
         .filter_map(|entry| match entry {
             Err(_) => None,
             Ok(entry) => {
