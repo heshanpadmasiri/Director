@@ -5,7 +5,12 @@ import { appDir } from '@tauri-apps/api/path';
 let selectedIndex = 0;
 let maxIndex = 0;
 let ignoreInput = false;
-let inMode = false;
+enum Mode {
+    Normal,
+    Marked,
+    Search
+}
+let mode = Mode.Normal;
 
 interface FileData {
     name: string;
@@ -32,32 +37,35 @@ async function refreshFileList() {
 }
 
 async function switchToMarkedMode() {
-    inMode = true;
+    mode = Mode.Marked;
+    console.log(await invoke<FileData[]>("get_marked_files"));
     await updateFileList(await invoke<FileData[]>("get_marked_files"));
 }
 
 async function updateFileList(files: FileData[]) {
     const fileList = document.querySelector<HTMLElement>("#fileList");
-    if (fileList) {
-        removeChildren(fileList);
-        maxIndex = files.length - 1;
-        files.forEach((fileData, index) => {
-            const listItem = document.createElement("li");
-            listItem.onclick = () => {
-                updatePreview(index, true);
-            };
-            listItem.textContent = fileData.name;
-            if (fileData.marked) {
-                listItem.classList.add("marked");
-            }
-            fileList?.appendChild(listItem);
-        });
-        const firstItem = fileList.querySelector("li");
-        if (firstItem) {
-            firstItem.classList.add("selected");
-        }
-        updatePreview(0);
+    if (fileList == null) {
+        console.error("failed to find file list");
+        return;
     }
+    removeChildren(fileList);
+    maxIndex = files.length - 1;
+    files.forEach((fileData, index) => {
+        const listItem = document.createElement("li");
+        listItem.onclick = () => {
+            updatePreview(index, true);
+        };
+        listItem.textContent = fileData.name;
+        if (fileData.marked) {
+            listItem.classList.add("marked");
+        }
+        fileList?.appendChild(listItem);
+    });
+    const firstItem = fileList.querySelector("li");
+    if (firstItem) {
+        firstItem.classList.add("selected");
+    }
+    updatePreview(0);
 }
 
 function removeChildren(elem: HTMLElement) {
@@ -67,7 +75,7 @@ function removeChildren(elem: HTMLElement) {
 }
 
 async function fetchPreviewData(index: number): Promise<PreviewData> {
-    let fn = inMode ? "get_marked_preview" : "get_preview";
+    let fn = mode == Mode.Marked ? "get_marked_preview" : "get_preview";
     return await invoke<PreviewData>(fn, { index });
 }
 
@@ -123,9 +131,63 @@ async function updateSelectedIndicator() {
     }
 }
 
+async function updateSearch(event: KeyboardEvent) {
+    // 0. check if the key is Esc and if so reset the mode
+    // 0.1 set regex "" to back end to reset backend as well
+    // * if key is enter reset the mode but not the file list
+    // 1. get the text from the search box
+    console.log("search mode event", event)
+    const searchBox = document.querySelector("#searchText")
+    if (searchBox == null) {
+        console.error("failed to find search box")
+        return;
+    }
+    let _text = searchBox.textContent;
+    let text = _text != null ? _text : "";
+    switch (event.key) {
+            case "Backspace":
+                text = text.slice(0, text.length-1);
+                break;
+            case "Enter":
+                mode = Mode.Normal;
+                searchBox.classList.add("hidden")
+                searchBox.textContent = "";
+                return;
+            case "Escape":
+                text = "";
+                mode = Mode.Normal;
+                break;
+            default:
+                text += event.key;
+                break;
+    }
+    searchBox.textContent = text;
+    // 3. send the text to backend regex search
+    await invoke("filter_files_by_regex", { regex: text })
+    // 4. update the files
+    await updateFileList(await invoke<FileData[]>("get_files"));
+}
+
+async function swithToSearchMode() {
+    if (mode != Mode.Normal) {
+        console.error("searching with in mode: "+ mode + " not implemented")
+        return;
+    }
+    const searchBox = document.querySelector("#searchText")
+    if (searchBox == null) {
+        console.error("failed to find search box")
+        return;
+    }
+    mode = Mode.Search;
+    searchBox.classList.remove("hidden");
+}
+
 async function onKeyPress(event: KeyboardEvent) {
     if (ignoreInput) {
         return;
+    }
+    if (mode == Mode.Search) {
+        return updateSearch(event);
     }
     switch (event.key) {
         case "j":
@@ -155,32 +217,43 @@ async function onKeyPress(event: KeyboardEvent) {
         case "c":
             await copyFiles();
             break;
+        case "/":
+            swithToSearchMode();
+            break;
         case "l": // If it is file this will just show the preview so not a problem
         case "Enter":
             await updatePreview(selectedIndex, true);
             return;
+        case "Escape":
+            mode = Mode.Normal;
+            await invoke("filter_files_by_regex", { regex: "" });
+            await refreshFileList();
+            selectedIndex = 0;
+            break;
     }
     await updatePreview(selectedIndex);
 };
 
 async function init() {
     const dirElem = document.querySelector<HTMLElement>("#currentDir");
-    if (dirElem) {
-        const dir = await invoke<string>("get_current_path");
-        dirElem.textContent = dir;
-        refreshFileList();
-        dirElem.onclick = async () => {
-            await goToParent();
-        }
+    if (dirElem == null) {
+        console.error("failed to find current dir");
+        return;
+    }
+    const dir = await invoke<string>("get_current_path");
+    dirElem.textContent = dir;
+    refreshFileList();
+    dirElem.onclick = async () => {
+        await goToParent();
     }
     document.addEventListener("keypress", onKeyPress);
 }
 
 async function goToParent() {
-    if (!inMode) {
+    if (mode == Mode.Normal) {
         await invoke("go_to_parent");
     } else {
-        inMode = false;
+        mode = Mode.Normal;
     }
     await refreshFileList();
 }

@@ -9,13 +9,15 @@ use log4rs::{
     config::{Appender, Root},
     encode::pattern::PatternEncoder,
 };
+use regex::Regex;
 use tauri::State;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct AppState {
     path: Mutex<PathBuf>,
-    files: Mutex<Vec<PathBuf>>,
+    files: Mutex<Vec<File>>,
     marked_files: Mutex<Vec<PathBuf>>,
+    search_regex: Mutex<Option<String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -43,11 +45,16 @@ struct FileData {
     marked: bool,
 }
 
+type DirectorResult<T> = Result<T, &'static str>;
+
 fn initial_state() -> AppState {
+    let path = starting_path();
+    let files = get_files_in_directory(&path);
     AppState {
-        path: Mutex::new(starting_path()),
-        files: Mutex::new(Vec::new()),
+        path: Mutex::new(path),
+        files: Mutex::new(files),
         marked_files: Mutex::new(Vec::new()),
+        search_regex: Mutex::new(None),
     }
 }
 
@@ -57,6 +64,7 @@ fn main() {
         .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
         .build(get_home().join("director_log.log"))
         .unwrap();
+    // fileter logs by level
     let config = log4rs::Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
         .build(Root::builder().appender("logfile").build(LevelFilter::Info))
@@ -66,6 +74,7 @@ fn main() {
         .manage(initial_state())
         .invoke_handler(tauri::generate_handler![
             copy_marked,
+            filter_files_by_regex,
             get_current_path,
             get_files,
             get_marked_files,
@@ -80,10 +89,18 @@ fn main() {
         .unwrap();
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 enum File {
     File(PathBuf),
     Directory(PathBuf),
+}
+
+impl AsRef<PathBuf> for File {
+    fn as_ref(&self) -> &PathBuf {
+        match self {
+            File::File(path) | File::Directory(path) => path,
+        }
+    }
 }
 
 impl File {
@@ -133,10 +150,21 @@ fn get_marked_files(state: State<AppState>) -> Vec<FileData> {
 
 #[tauri::command]
 fn get_files(state: State<AppState>) -> Vec<FileData> {
-    let current_path = state.path.lock().unwrap();
     let marked_files = state.marked_files.lock().unwrap();
-    get_files_in_directory(&current_path)
+    let files = state.files.lock().unwrap();
+    let regex = match &*state.search_regex.lock().unwrap() {
+        Some(regex) => Some(
+            Regex::new(&regex).expect("If text is an invalid regex it must not be added to sta"),
+        ),
+        None => None,
+    };
+    log::info!("{state:?}");
+    files
         .iter()
+        .filter(|file| match &regex {
+            Some(regex) => file_match_regex(file, regex),
+            None => true,
+        })
         .map(|file| {
             if marked_files.contains(&file.path()) {
                 FileData {
@@ -164,9 +192,12 @@ fn get_preview(index: usize, state: State<AppState>) -> PreviewData {
     }
 }
 
-fn get_preview_inner(index: usize, state: State<AppState>) -> Result<PreviewData, &'static str> {
-    let current_path = state.path.lock().map_err(|_| "failed to lock app state")?;
-    get_file_preview(index, &get_files_in_directory(&current_path))
+fn get_preview_inner(index: usize, state: State<AppState>) -> DirectorResult<PreviewData> {
+    let files = state
+        .files
+        .lock()
+        .map_err(|_| "failed to lock files state")?;
+    get_file_preview(index, &files)
 }
 
 #[tauri::command]
@@ -180,10 +211,7 @@ fn get_marked_preview(index: usize, state: State<AppState>) -> PreviewData {
     }
 }
 
-fn get_marked_preview_inner(
-    index: usize,
-    state: State<AppState>,
-) -> Result<PreviewData, &'static str> {
+fn get_marked_preview_inner(index: usize, state: State<AppState>) -> DirectorResult<PreviewData> {
     let marked_files = state
         .marked_files
         .lock()
@@ -191,8 +219,7 @@ fn get_marked_preview_inner(
     get_file_preview(index, &files_from_paths(&marked_files))
 }
 
-fn get_file_preview(index: usize, file_paths: &Vec<File>) -> Result<PreviewData, &'static str> {
-    log::info!("{index} {file_paths:?}");
+fn get_file_preview(index: usize, file_paths: &Vec<File>) -> DirectorResult<PreviewData> {
     if file_paths.len() <= index {
         return Ok(PreviewData::None);
     }
@@ -225,14 +252,38 @@ fn mark_file(index: usize, state: State<AppState>) {
 
 #[tauri::command]
 fn go_to_directory(index: usize, state: State<AppState>) {
-    let mut current_path = state.path.lock().unwrap();
-    let files = get_files_in_directory(&current_path);
-    match &files[index] {
-        File::Directory(path) => {
-            *current_path = path.to_path_buf();
-        }
-        _ => {}
+    {
+        let mut regex = state.search_regex.lock().unwrap();
+        *regex = None;
     }
+    {
+        let mut current_path = state.path.lock().unwrap();
+        let files = get_files_in_directory(&current_path);
+        match &files[index] {
+            File::Directory(path) => {
+                *current_path = path.to_path_buf();
+            }
+            _ => {}
+        }
+    }
+    if let Err(err) = update_files(state) {
+        log::error!("{err}");
+    }
+}
+
+fn update_files(state: State<AppState>) -> DirectorResult<()> {
+    let path = state.path.lock().map_err(|err| {
+        log::error!("{err}");
+        "failed to lock files"
+    })?;
+
+    let files = get_files_in_directory(&path);
+    let mut state_files = state.files.lock().map_err(|err| {
+        log::error!("{err}");
+        "failed to mutably lock files"
+    })?;
+    *state_files = files;
+    Ok(())
 }
 
 #[tauri::command]
@@ -278,13 +329,23 @@ fn file_kind(path: &PathBuf) -> FileKind {
 
 #[tauri::command]
 fn go_to_parent(state: State<AppState>) {
+    {
+        let mut regex = state.search_regex.lock().unwrap();
+        *regex = None;
+    }
     let mut path = state.path.lock().unwrap();
     let parent = path.parent().unwrap();
     *path = parent.to_path_buf();
+    let mut files = state.files.lock().unwrap();
+    *files = get_files_in_directory(&path);
 }
 
 #[tauri::command]
 fn go_to_path(state: State<AppState>, path_str: String) {
+    {
+        let mut regex = state.search_regex.lock().unwrap();
+        *regex = None;
+    }
     let mut path = state.path.lock().unwrap();
     *path = PathBuf::from(path_str);
 }
@@ -300,7 +361,7 @@ fn get_current_path(state: State<AppState>) -> String {
     }
 }
 
-fn get_current_path_inner(state: State<AppState>) -> Result<String, &'static str> {
+fn get_current_path_inner(state: State<AppState>) -> DirectorResult<String> {
     let path = state.path.lock().map_err(|_| "failed to lock app state")?;
     let path_str = if is_root_path(&path) {
         "/".to_string()
@@ -310,6 +371,54 @@ fn get_current_path_inner(state: State<AppState>) -> Result<String, &'static str
             .to_string()
     };
     Ok(path_str)
+}
+
+#[tauri::command]
+fn filter_files_by_regex(state: State<AppState>, regex: String) {
+    if let Err(err) = filter_files_by_regex_inner(state, regex) {
+        log::error!("failed to filter by regex {err}");
+    }
+}
+
+fn filter_files_by_regex_inner(state: State<AppState>, regex_str: String) -> DirectorResult<()> {
+    let path = state.path.lock().map_err(|err| {
+        log::error!("{err}");
+        "failed to lock current path"
+    })?;
+    let files = get_files_in_directory(&path);
+    let mut state_files = state.files.lock().map_err(|err| {
+        log::error!("{err}");
+        "failed to mutably lock files"
+    })?;
+    let mut state_regex = state.search_regex.lock().map_err(|err| {
+        log::error!("{err}");
+        "failed to mutably lock regex"
+    })?;
+    if regex_str.is_empty() {
+        *state_files = files;
+        *state_regex = None;
+        return Ok(());
+    }
+    let regex = Regex::new(&regex_str).map_err(|err| {
+        log::error!("{err}");
+        "failed to create regex pattern"
+    })?;
+    *state_regex = Some(regex_str.to_owned());
+    let files = files
+        .into_iter()
+        .filter(|file| file_match_regex(file, &regex))
+        .collect();
+
+    *state_files = files;
+    Ok(())
+}
+
+fn file_match_regex(file: &File, regex: &Regex) -> bool {
+    let path = file.as_ref();
+    match path.file_name() {
+        Some(file_name) => regex.is_match(&file_name.to_string_lossy()),
+        None => false,
+    }
 }
 
 fn is_root_path(path: &PathBuf) -> bool {
@@ -326,9 +435,12 @@ fn get_files_in_directory(path: &PathBuf) -> Vec<File> {
     }
 }
 
-fn get_files_in_directory_inner(path: &PathBuf) -> Result<Vec<File>, &'static str> {
+fn get_files_in_directory_inner(path: &PathBuf) -> DirectorResult<Vec<File>> {
     Ok(std::fs::read_dir(path)
-        .map_err(|err| "failed to read dir")?
+        .map_err(|err| {
+            log::error!("{err}");
+            "failed to read dir"
+        })?
         .filter_map(|entry| match entry {
             Err(_) => None,
             Ok(entry) => {

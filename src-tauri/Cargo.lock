@@ -576,6 +576,7 @@ dependencies = [
  "fix-path-env",
  "log",
  "log4rs",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
