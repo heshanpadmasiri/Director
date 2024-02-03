@@ -128,6 +128,7 @@ async function updateSelectedIndicator() {
     const listItem = fileList?.querySelectorAll("li")[selectedIndex];
     if (listItem) {
         listItem.classList.add("selected");
+        listItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 }
 
